@@ -11,7 +11,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"sync"
@@ -144,11 +143,8 @@ func (s *Store) ReadBlock(index, begin, length int) ([]byte, error) {
 		return nil, fmt.Errorf("块范围越界: piece=%d begin=%d len=%d", index, begin, length)
 	}
 	offset := int64(index)*int64(s.tf.PieceLength) + int64(begin)
-	if _, err := s.file.Seek(offset, io.SeekStart); err != nil {
-		return nil, err
-	}
 	buf := make([]byte, length)
-	if _, err := io.ReadFull(s.file, buf); err != nil {
+	if _, err := s.file.ReadAt(buf, offset); err != nil {
 		return nil, err
 	}
 	s.mu.Lock()
