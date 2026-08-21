@@ -79,6 +79,9 @@ func (c *Client) Do(req Request) (*Response, error) {
 		return nil, fmt.Errorf("announce 响应解析失败: %w", err)
 	}
 	if ar.Failure != "" {
+		// 维护窗口里边缘 Tracker 会复用上一轮响应外壳：HTTP 200 的 JSON 同时
+		// 带 failure reason 和旧的 peers。清空 peers，确保拒绝真正隔离住出站连接。
+		ar.Peers = nil
 		return &ar, fmt.Errorf("tracker 拒绝: %s", ar.Failure)
 	}
 	return &ar, nil

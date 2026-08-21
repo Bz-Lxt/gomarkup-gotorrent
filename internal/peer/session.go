@@ -29,7 +29,8 @@ type Session struct {
 	tf     *metainfo.TorrentFile
 	store  *storage.Store
 	picker *piecePicker
-	ann    *announce.Client
+	ann    announcer
+	dial   func(addr string)
 	events *eventlog.Log
 	sample *metrics.Sampler
 	downLim *ratelimit.Limiter
@@ -45,8 +46,13 @@ type Session struct {
 	stopOnce sync.Once
 }
 
+// announcer 是 announce 客户端接口；*announce.Client 天然满足，便于测试替换。
+type announcer interface {
+	Do(announce.Request) (*announce.Response, error)
+}
+
 func newSession(p *Peer, tf *metainfo.TorrentFile, store *storage.Store, seedMode bool) *Session {
-	return &Session{
+	s := &Session{
 		peer:     p,
 		tf:       tf,
 		store:    store,
@@ -61,6 +67,13 @@ func newSession(p *Peer, tf *metainfo.TorrentFile, store *storage.Store, seedMod
 		seedMode: seedMode,
 		stopCh:   make(chan struct{}),
 	}
+	s.dial = func(addr string) { go p.dialPeer(s, addr) }
+	return s
+}
+
+// newTestSession 构造一个不启动后台循环、ann/dial 可替换的会话，仅供测试。
+func newTestSession(p *Peer, tf *metainfo.TorrentFile, store *storage.Store) *Session {
+	return newSession(p, tf, store, false)
 }
 
 // InfoHashHex 返回 info_hash 的十六进制表示。
@@ -231,9 +244,13 @@ func (s *Session) announce(event announce.Event) int {
 	if err != nil {
 		s.log.Warnf("announce 失败: %v", err)
 		s.note(eventlog.KindAnnounce, "汇报失败: %v", err)
+		// 维护窗口里边缘 Tracker 会复用上一轮响应外壳：HTTP 200 的 JSON 同时
+		// 带 failure reason 和旧的 peers。此时绝不能继续拨号，否则旧 peer 的
+		// 监听端仍会立刻收到新的 TCP 连接。拒绝必须真正隔离住出站连接。
 		if resp == nil {
 			return 0
 		}
+		return resp.Interval
 	}
 	if event != announce.EventNone {
 		s.note(eventlog.KindAnnounce, "event=%s peers=%d", event, len(resp.Peers))
@@ -245,7 +262,7 @@ func (s *Session) announce(event announce.Event) int {
 				break
 			}
 			addr := net.JoinHostPort(p.IP, fmt.Sprintf("%d", p.Port))
-			go s.peer.dialPeer(s, addr)
+			s.dial(addr)
 		}
 	}
 	return resp.Interval

@@ -233,7 +233,7 @@ func (pc *peerConn) handleExtended(m *wire.Message) {
 		if pc.session.numConns() >= pc.session.maxConns() {
 			return
 		}
-		go pc.session.peer.dialPeer(pc.session, peer.Addr())
+		pc.session.dial(peer.Addr())
 	}
 }
 
