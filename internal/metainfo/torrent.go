@@ -16,6 +16,7 @@
 package metainfo
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"os"
@@ -97,12 +98,16 @@ func Create(filePath, announce, comment string, pieceLength int) (*TorrentFile, 
 	return tf, nil
 }
 
+// hashSource 返回用于计算分片哈希的读取器。
+// 当文件大小为 0 时，返回一个保证 EOF 的空读取器，
+// 使 HashReader 落入“空输入”分支并产出单个空数据哈希，
+// 从而为零字节制品生成合法种子（历史上即如此）。
+// 非空文件仍以 LimitedReader 限定范围，分片结果保持不变。
 func hashSource(f *os.File, size int64) io.Reader {
-	var r *io.LimitedReader
-	if size > 0 {
-		r = &io.LimitedReader{R: f, N: size}
+	if size <= 0 {
+		return bytes.NewReader(nil)
 	}
-	return r
+	return &io.LimitedReader{R: f, N: size}
 }
 
 // Encode 序列化为 .torrent 文件内容（bencode）。
