@@ -72,12 +72,16 @@ func Open(dir string, tf *metainfo.TorrentFile) (*Store, error) {
 	// 优先从状态文件恢复断点续传进度
 	st, err := s.loadState()
 	if err == nil && st != nil {
-		raw, err := base64.StdEncoding.DecodeString(st.Bitfield)
-		if err == nil && len(raw) == len(s.bf) {
-			s.bf = bitfield.Bitfield(raw)
-			s.Downloaded = st.Downloaded
-			s.Uploaded = st.Uploaded
-			return s, nil
+		// 仅当 info_hash 匹配才恢复位图，避免不同种子（恰好第 0 片内容相同）
+		// 共用状态文件导致进度串扰。
+		if st.InfoHash == hex.EncodeToString(s.tf.InfoHash[:]) {
+			raw, err := base64.StdEncoding.DecodeString(st.Bitfield)
+			if err == nil && len(raw) == len(s.bf) {
+				s.bf = bitfield.Bitfield(raw)
+				s.Downloaded = st.Downloaded
+				s.Uploaded = st.Uploaded
+				return s, nil
+			}
 		}
 	}
 
@@ -248,8 +252,7 @@ func (s *Store) loadState() (*State, error) {
 }
 
 func (s *Store) statePath() string {
-	pieceHash := s.tf.PieceHashes[0]
-	return filepath.Join(stateDir(s.dir), hex.EncodeToString(pieceHash[:])+".json")
+	return filepath.Join(stateDir(s.dir), hex.EncodeToString(s.tf.InfoHash[:])+".json")
 }
 
 func stateDir(dir string) string { return filepath.Join(dir, ".state") }
