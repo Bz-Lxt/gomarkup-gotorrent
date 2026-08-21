@@ -301,6 +301,7 @@ func (pc *peerConn) handlePiece(m *wire.Message) {
 	var work *pieceWork
 	if done {
 		work = pc.work
+		pc.work = nil // 清除已完成分片，使 fillPipeline 能继续选取下一片
 	}
 	pc.mu.Unlock()
 
